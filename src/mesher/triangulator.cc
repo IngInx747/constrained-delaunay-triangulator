@@ -627,6 +627,48 @@ static int restore_constraints(TriMesh &mesh, const LoopMesh &poly)
     return 0;
 }
 
+static int remove_exteriors(TriMesh &mesh)
+{
+    std::unordered_set<Fh> exteriors {};
+    std::queue<Fh> frontier {};
+
+    Vh vh_last = *(--mesh.vertices_end());
+    Fh fh_last = *(mesh.vf_begin(vh_last));
+
+    frontier.push(fh_last);
+    exteriors.insert(fh_last);
+
+    while (!frontier.empty())
+    {
+        Fh fh = frontier.front(); frontier.pop();
+
+        for (Hh hh : mesh.fh_range(fh))
+        {
+            Eh eh = mesh.edge_handle(hh);
+            if (is_sharp(mesh, eh)) continue;
+            if (mesh.is_boundary(eh)) continue;
+
+            Fh fi = mesh.opposite_face_handle(hh);
+            if (exteriors.count(fi)) continue;
+
+            frontier.push(fi);
+            exteriors.insert(fi);
+        }
+    }
+
+    if (exteriors.size() == mesh.n_faces())
+        return 1;
+
+    for (Fh fh : exteriors)
+    {
+        mesh.delete_face(fh);
+    }
+
+    mesh.garbage_collection();
+
+    return 0;
+}
+
 ////////////////////////////////////////////////////////////////
 /// Wrapping up
 ////////////////////////////////////////////////////////////////
@@ -645,6 +687,9 @@ int triangulate(const LoopMesh &poly, TriMesh &mesh)
 
     // Restore constraint edges in the domain
     restore_constraints(mesh, poly);
+
+    // Remove exterior region
+    remove_exteriors(mesh);
 
     return 0;
 }
