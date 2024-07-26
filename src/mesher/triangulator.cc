@@ -375,7 +375,6 @@ inline int intersection_info(const TriMesh &mesh, const Vec2 &u0, const Vec2 &u1
         (ru0 * ru1 < 0) && (rv1 == 0 && rv0 != 0) ? ON_VERTEX : // v1 lies on (u0,u1)
         (ru0 != 0 && ru1 == 0) && (rv1 == 0)      ? ON_VERTEX : // v1 overlaps u1
         NO_ITSC; // no intersecting, overlapping, v0 lies on (u0,u1), and other cases
-        // BUG: no branch for u1 being reached
 }
 
 inline double intersection_param(const TriMesh &mesh, const Vec2 &u0, const Vec2 &u1, Hh hh)
@@ -468,7 +467,7 @@ static int get_intersections(TriMesh &mesh, Vh vh0, Vh vh1, std::vector<Hh> &hhs
         }
         else // search in vain, for some reasons
         {
-            printf("searching segment (%d, %d) lost in the way\n", vh0.idx()+1, vh1.idx()+1);
+            printf("searching segment (%d, %d) lost on the way\n", vh0.idx()+1, vh1.idx()+1);
             break;
         }
 
@@ -580,7 +579,6 @@ static Hh restore_constraint(TriMesh &mesh, Vh vh0, Vh vh1)
     std::deque<Hh> frontier(hhs.begin(), hhs.end());
 
     const int max_num_iter = (int)mesh.n_edges();
-    int iter {};
 
     for (int iter = 0; !frontier.empty() && iter < max_num_iter; ++iter)
     {
@@ -611,6 +609,25 @@ static Hh restore_constraint(TriMesh &mesh, Vh vh0, Vh vh1)
     return hh_rc;
 }
 
+static int make_delaunay(TriMesh &mesh, Eh eh)
+{
+    auto delaunifier = make_delaunifier(mesh, EuclideanDelaunay {});
+
+    const int max_num_iter = (int)mesh.n_edges();
+
+    const Eh ehs[4] {
+        mesh.edge_handle(mesh.next_halfedge_handle(mesh.halfedge_handle(eh, 0))),
+        mesh.edge_handle(mesh.prev_halfedge_handle(mesh.halfedge_handle(eh, 0))),
+        mesh.edge_handle(mesh.next_halfedge_handle(mesh.halfedge_handle(eh, 1))),
+        mesh.edge_handle(mesh.prev_halfedge_handle(mesh.halfedge_handle(eh, 1))) };
+
+    delaunifier.reset(); delaunifier.to_flip(ehs, 4); int n_flip {};
+
+    for (auto eh = delaunifier.flip(); eh.is_valid() && n_flip < max_num_iter; eh = delaunifier.flip(), ++n_flip) {}
+
+    return n_flip;
+}
+
 static int restore_constraints(TriMesh &mesh, const LoopMesh &poly)
 {
     for (Eh ep : poly.edges())
@@ -620,8 +637,16 @@ static int restore_constraints(TriMesh &mesh, const LoopMesh &poly)
         Vh vh0 = mesh.vertex_handle(vp0.idx());
         Vh vh1 = mesh.vertex_handle(vp1.idx());
         Hh hh = restore_constraint(mesh, vh0, vh1);
-        if (hh.is_valid()) set_sharp(mesh, mesh.edge_handle(hh), true);
-        else { printf("restoring segment (%d, %d) failed\n", vh0.idx()+1, vh1.idx()+1); }
+
+        if (!hh.is_valid())
+        {
+            printf("restoring segment (%d, %d) failed\n", vh0.idx()+1, vh1.idx()+1);
+            continue;
+        }
+
+        set_sharp(mesh, mesh.edge_handle(hh), true); // mark restored edge
+
+        make_delaunay(mesh, mesh.edge_handle(hh)); // maintain Delaunay after restoration
     }
 
     return 0;

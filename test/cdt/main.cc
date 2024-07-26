@@ -1,7 +1,6 @@
 #include "mesher.hh"
-#include "triangulator.hh"
-#include "delaunay.hh"
 #include "mesh_io.hh"
+#include "triangulator.hh"
 
 using namespace OpenMesh;
 
@@ -29,7 +28,6 @@ int main(const int argc, const char **argv)
     getOrMakeProperty<Mh, std::string>(mesh, var_m_path())() = path;
 
     triangulate(poly, mesh);
-    make_delaunay(mesh);
 
     save_mesh(mesh, (prefix + ".out.mesh").c_str());
 
