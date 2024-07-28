@@ -268,10 +268,14 @@ inline void split_edge(TriMesh &mesh, const Eh &eh, const Vh &vh)
     { set_sharp(mesh, hdge.edge(), false); }
 }
 
-static Fh search_triangle(const TriMesh &mesh, const Vec2 &u)
+static Fh search_triangle(const TriMesh &mesh, const Vec2 &u, Fh fh = Fh {})
 {
-    auto fh = search_triangle_guided_bfs(mesh, u, mesh.face_handle(0));
+    if (!fh.is_valid()) fh = mesh.face_handle(0);
+
+    fh = search_triangle_guided_bfs(mesh, u, fh);
+
     if (!fh.is_valid()) fh = search_triangle_brute_force(mesh, u);
+
     return fh;
 }
 
@@ -317,15 +321,19 @@ static int insert_vertices(TriMesh &mesh)
 
     int nv {};
 
+    Fh fh_last {};
+
     for (Vh vh : mesh.vertices()) if (mesh.is_isolated(vh))
     {
         const auto u = get_xy(mesh, vh);
 
         // find the nearest triangle of new point
-        auto fh = search_triangle(mesh, u);
+        auto fh = search_triangle(mesh, u, fh_last);
 
         // skip any point out of domain
         if (!fh.is_valid()) continue;
+
+        fh_last = fh;
 
         // on which primitive of the triangle the point is
         Hh hh {}; int loc = locate(mesh, fh, u, hh);
@@ -342,7 +350,7 @@ static int insert_vertices(TriMesh &mesh)
             if (!hdge.next().edge().is_boundary())
                 ehs[ne++] = hdge.next().edge();
 
-        // make delaunay
+        // maintain Delaunay
         delaunifier.reset(); delaunifier.to_flip(ehs, ne); int n_flip {};
 
         for (auto eh = delaunifier.flip(); eh.is_valid() && n_flip < max_num_edge_flip; eh = delaunifier.flip(), ++n_flip) {}
