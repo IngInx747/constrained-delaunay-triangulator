@@ -1,4 +1,4 @@
-project(libmesher)
+project(libcdt)
 
 file(GLOB SRCS
   "*.h" "*.hh" "*.hpp"
