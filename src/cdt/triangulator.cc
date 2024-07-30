@@ -13,12 +13,6 @@ using namespace OpenMesh;
 /// utils
 ////////////////////////////////////////////////////////////////
 
-inline double cross(const Vec2 &a, const Vec2 &b)
-{ return a[0]*b[1] - a[1]*b[0]; }
-
-inline double argument_angle(const Vec2 &du, const Vec2 &dw)
-{ return atan2(cross(du, dw), dot(du, dw)); }
-
 inline double cosine(double a, double b, double c)
 { const double cs = (a*a + b*b - c*c)/(a*b*2); return (cs<-1) ? -1 : (cs>1) ? 1 : cs; }
 
