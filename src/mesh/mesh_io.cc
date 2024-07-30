@@ -71,7 +71,75 @@ int save_obj(
     return 0;
 }
 
-int save_nodes(const double *vs, const int nv, const char* filename, const std::streamsize prec)
+int read_node(std::vector<Vec2> &vs, const char *filename)
+{
+    constexpr size_t kInf = std::numeric_limits<std::streamsize>::max();
+
+    std::ifstream in(filename, std::ios::in);
+    if (!in) return IO_ERR_TYPE::CANNOT_OPEN;
+
+    int ver {}, dim {}, nv {}, ne {};
+
+    in >> nv;
+    in >> dim;
+    in.ignore(kInf, '\n');
+
+    vs.reserve(nv);
+
+    for (int i = 0; i < nv; ++i)
+    {
+        int vid {}; in >> vid;
+        Vec2 p {}; in >> p[0] >> p[1];
+        vs.push_back(p);
+        // optional: process vertex tag
+        in.ignore(kInf, '\n');
+    }
+
+    return IO_ERR_TYPE::NO_ERROR;
+}
+
+int read_poly(std::vector<Vec2> &vs, std::vector<Int2> &es, const char *filename)
+{
+    constexpr size_t kInf = std::numeric_limits<std::streamsize>::max();
+
+    std::ifstream in(filename, std::ios::in);
+    if (!in) return IO_ERR_TYPE::CANNOT_OPEN;
+
+    int ver {}, dim {}, nv {}, ne {};
+
+    in >> nv;
+    in >> dim;
+    in.ignore(kInf, '\n');
+
+    vs.reserve(nv);
+
+    for (int i = 0; i < nv; ++i)
+    {
+        int vid {}; in >> vid;
+        Vec2 p {}; in >> p[0] >> p[1];
+        vs.push_back(p);
+        // optional: process vertex tag
+        in.ignore(kInf, '\n');
+    }
+
+    in >> ne;
+    in.ignore(kInf, '\n');
+
+    es.reserve(ne);
+
+    for (int i = 0; i < ne; ++i)
+    {
+        int eid {}; in >> eid;
+        Int2 vv; in >> vv[0] >> vv[1];
+        es.emplace_back(vv[0] - 1, vv[1] - 1);
+        // optional: process edge tag
+        in.ignore(kInf, '\n');
+    }
+
+    return IO_ERR_TYPE::NO_ERROR;
+}
+
+int save_node(const double *vs, const int nv, const char* filename, const std::streamsize prec)
 {
     std::ofstream out(filename, std::ios::out);
     if (!out) return out.bad();
@@ -96,7 +164,7 @@ int save_poly(const double *vs, const int nv, const int *es, const int ne, const
 
     out << std::fixed << std::setprecision(prec);
 
-    out << nv << " 2 0 1\n";
+    out << nv << " 2\n";
 
     for (int i = 0; i < nv; ++i)
         out << i + 1 << " "
@@ -179,7 +247,7 @@ inline int save_mesh_builtin(const MeshT &mesh, const char *filename)
 }
 
 template <class MeshT>
-inline int read_mesh_detri2(MeshT &mesh, const char *filename)
+inline int read_mesh_dot_mesh(MeshT &mesh, const char *filename)
 {
     constexpr size_t kInf = std::numeric_limits<std::streamsize>::max();
 
@@ -273,13 +341,13 @@ inline int read_mesh_detri2(MeshT &mesh, const char *filename)
 }
 
 template <class MeshT>
-inline int save_mesh_detri2(MeshT &mesh, const char *filename)
+inline int save_mesh_dot_mesh(MeshT &mesh, const char *filename)
 {
     return IO_ERR_TYPE::UNSUPPORTED_FORMAT;
 }
 
 template <>
-static int save_mesh_detri2(const TriMesh &mesh, const char *filename)
+static int save_mesh_dot_mesh(const TriMesh &mesh, const char *filename)
 {
     std::ofstream out(filename, std::ios::out);
     if (!out) return IO_ERR_TYPE::CANNOT_OPEN;
@@ -391,7 +459,7 @@ int read_mesh(MeshT &mesh, const char *filename)
     }
     else if (ext.compare("mesh") == 0)
     {
-        err = read_mesh_detri2(mesh, filename);
+        err = read_mesh_dot_mesh(mesh, filename);
     }
     else
     {
@@ -416,7 +484,7 @@ int save_mesh(const MeshT &mesh, const char *filename)
     }
     else if (ext.compare("mesh") == 0)
     {
-        err = save_mesh_detri2(mesh, filename);
+        err = save_mesh_dot_mesh(mesh, filename);
     }
     else
     {
@@ -441,93 +509,6 @@ template
 int save_mesh(const PolyMesh&, const char*);
 
 template <class MeshT>
-inline int read_poly_detri2(MeshT &mesh, const char *filename)
-{
-    return IO_ERR_TYPE::UNSUPPORTED_FORMAT;
-}
-
-//template <>
-//struct std::hash<Int2>
-//{
-//    inline size_t operator()(const Int2 &i2) const noexcept
-//    {
-//        size_t h1 = hash<int>{}(i2[0]);
-//        size_t h2 = hash<int>{}(i2[1]);
-//        return h1 == h2 ? h1 : h1 ^ h2;
-//    }
-//};
-
-//inline bool operator==(const Int2 &lhs, const Int2 &rhs)
-//{ return lhs[0] == rhs[0] && lhs[1] == rhs[1] || lhs[0] == rhs[1] && lhs[1] == rhs[0]; }
-
-template <>
-inline int read_poly_detri2(LoopMesh &mesh, const char *filename)
-{
-    constexpr size_t kInf = std::numeric_limits<std::streamsize>::max();
-
-    std::ifstream in(filename, std::ios::in);
-    if (!in) return IO_ERR_TYPE::CANNOT_OPEN;
-
-    int ver {}, dim {}, nv {}, ne {};
-    std::vector<Int2> edge_list;
-
-    in >> nv;
-    in >> dim;
-    in.ignore(kInf, '\n');
-
-    for (int i = 0; i < nv; ++i)
-    {
-        int vid {}; in >> vid;
-        TriMesh::Point p { 0,0,0 };
-        for (int j = 0; j < dim; ++j)
-            in >> p[j];
-        Vh vh = mesh.add_vertex(p);
-        // optional: process vertex tag
-        in.ignore(kInf, '\n');
-    }
-
-    in >> ne;
-    in.ignore(kInf, '\n');
-
-    struct HashInt2
-    {
-        inline size_t operator()(const Int2 &lhs) const
-        {
-            size_t h1 = std::hash<int>{}(lhs[0]);
-            size_t h2 = std::hash<int>{}(lhs[1]);
-            return h1 == h2 ? h1 : h1 ^ h2;
-        }
-    };
-
-    struct EqualToInt2
-    {
-        inline bool operator()(const Int2 &lhs, const Int2 &rhs) const
-        {
-            return
-                lhs[0] == rhs[0] && lhs[1] == rhs[1] ||
-                lhs[0] == rhs[1] && lhs[1] == rhs[0];
-        }
-    };
-
-    std::unordered_set<Int2, HashInt2, EqualToInt2> vvs {};
-
-    for (int i = 0; i < ne; ++i)
-    {
-        int eid {}; in >> eid;
-        Int2 vv; in >> vv[0] >> vv[1];
-        if (vvs.count(vv)) continue;
-        Vh vh0 = mesh.vertex_handle(vv[0] - 1);
-        Vh vh1 = mesh.vertex_handle(vv[1] - 1);
-        Hh hh0 = mesh.add_edge(vh0, vh1, true);
-        // optional: process edge tag
-        in.ignore(kInf, '\n');
-        vvs.insert(vv);
-    }
-
-    return IO_ERR_TYPE::NO_ERROR;
-}
-
-template <class MeshT>
 inline int save_poly_obj(const MeshT &mesh, const char *filename)
 {
     std::vector<int> es;
@@ -546,7 +527,7 @@ inline int save_poly_obj(const MeshT &mesh, const char *filename)
 }
 
 template <class MeshT>
-static int save_poly_detri2(const MeshT &mesh, const char *filename)
+static int save_poly_as_poly(const MeshT &mesh, const char *filename)
 {
     std::ofstream out(filename, std::ios::out);
     if (!out) return IO_ERR_TYPE::CANNOT_OPEN;
@@ -617,7 +598,7 @@ static int save_poly_detri2(const MeshT &mesh, const char *filename)
 }
 
 template <class MeshT>
-static int save_poly_mesh_detri2(const MeshT &mesh, const char *filename)
+static int save_poly_as_mesh(const MeshT &mesh, const char *filename)
 {
     std::ofstream out(filename, std::ios::out);
     if (!out) return IO_ERR_TYPE::CANNOT_OPEN;
@@ -688,27 +669,6 @@ static int save_poly_mesh_detri2(const MeshT &mesh, const char *filename)
 }
 
 template <class MeshT>
-int read_poly(MeshT &mesh, const char *filename)
-{
-    int err { IO_ERR_TYPE::NO_ERROR };
-
-    const auto ext = get_file_extension(filename);
-
-    if (ext.compare("poly") == 0)
-    {
-        err = read_poly_detri2(mesh, filename);
-    }
-    else
-    {
-        err = IO_ERR_TYPE::UNSUPPORTED_FORMAT;
-    }
-
-    if (err) fprintf(stderr, "read_mesh error %d: %s\n", err, __io_err_msg[err]);
-
-    return err;
-}
-
-template <class MeshT>
 int save_poly(const MeshT &mesh, const char *filename)
 {
     int err { IO_ERR_TYPE::NO_ERROR };
@@ -721,11 +681,11 @@ int save_poly(const MeshT &mesh, const char *filename)
     }
     else if (ext.compare("poly") == 0)
     {
-        err = save_poly_detri2(mesh, filename);
+        err = save_poly_as_poly(mesh, filename);
     }
     else if (ext.compare("mesh") == 0)
     {
-        err = save_poly_mesh_detri2(mesh, filename);
+        err = save_poly_as_mesh(mesh, filename);
     }
     else
     {
@@ -738,67 +698,7 @@ int save_poly(const MeshT &mesh, const char *filename)
 }
 
 template
-int read_poly(LoopMesh&, const char*);
-
-template
 int save_poly(const PolyMesh&, const char*);
 
 template
 int save_poly(const TriMesh&, const char*);
-
-template
-int save_poly(const LoopMesh&, const char*);
-
-template <class MeshT>
-inline int save_marked_face_centroids(const MeshT &mesh, const char *filename, const double offset)
-{
-    std::vector<Vec3> ps {};
-    int np {};
-
-    for (const auto face : mesh.faces()) if (is_marked(mesh, face))
-    {
-        const auto p = mesh.calc_face_centroid(face);
-        const auto n = mesh.calc_normal(face) * offset;
-        ps.push_back(p + n);
-        ++np;
-    }
-
-    return save_obj(
-        (const double*)ps.data(), (const int)ps.size(),
-        nullptr,                  0,
-        nullptr,                  0,
-        filename);
-}
-
-template
-int save_marked_face_centroids(const TriMesh&, const char*, const double);
-
-template
-int save_marked_face_centroids(const PolyMesh&, const char*, const double);
-
-template <class MeshT>
-int save_marked_vertices(const MeshT &mesh, const char *filename, const double offset)
-{
-    std::vector<Vec3> ps {};
-    int np {};
-
-    for (const auto vert : mesh.vertices()) if (is_marked(mesh, vert))
-    {
-        const auto p = mesh.point(vert);
-        const auto n = mesh.calc_normal(vert) * offset;
-        ps.push_back(p + n);
-        ++np;
-    }
-
-    return save_obj(
-        (const double*)ps.data(), (const int)ps.size(),
-        nullptr,                  0,
-        nullptr,                  0,
-        filename);
-}
-
-template
-int save_marked_vertices(const TriMesh&, const char*, const double);
-
-template
-int save_marked_vertices(const PolyMesh&, const char*, const double);

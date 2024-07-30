@@ -4,7 +4,6 @@
 #include <OpenMesh/Core/Mesh/PolyMesh_ArrayKernelT.hh>
 #include <OpenMesh/Core/Mesh/TriMesh_ArrayKernelT.hh>
 #include <OpenMesh/Core/Mesh/Casts.hh>
-#include "loop_mesh.hh"
 #include "property.hh"
 #include "vector_n.hh"
 
@@ -37,8 +36,6 @@ struct MeshTraits : public OpenMesh::DefaultTraitsDouble
 using PolyMesh = OpenMesh::PolyMesh_ArrayKernelT<MeshTraits>;
 
 using TriMesh = OpenMesh::TriMesh_ArrayKernelT<MeshTraits>;
-
-using LoopMesh = OpenMesh::LoopMesh_ArrayKernelT<MeshTraits>;
 
 template <class MeshT>
 inline bool is_marked(const MeshT &mesh, const Vh &vh) { return mesh.status(vh).selected(); }

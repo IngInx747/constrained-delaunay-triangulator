@@ -4,17 +4,43 @@
 #include <predicates.h>
 #include "mesh.hh"
 #include "topology.hh"
-#include "geometry.hh"
 #include "spatial_search.hh"
 #include "mesh_io.hh"
 
 using namespace OpenMesh;
 
 ////////////////////////////////////////////////////////////////
-/// pred2D
+/// utils
 ////////////////////////////////////////////////////////////////
 
-enum { CCW = 1, CW = -1, LINEAR = 0 };
+inline double cross(const Vec2 &a, const Vec2 &b)
+{ return a[0]*b[1] - a[1]*b[0]; }
+
+inline double argument_angle(const Vec2 &du, const Vec2 &dw)
+{ return atan2(cross(du, dw), dot(du, dw)); }
+
+inline double cosine(double a, double b, double c)
+{ const double cs = (a*a + b*b - c*c)/(a*b*2); return (cs<-1) ? -1 : (cs>1) ? 1 : cs; }
+
+template <class MeshT>
+inline Vec2 get_xy(const MeshT &mesh, Vh vh)
+{ const auto p = mesh.point(vh); return { p[0], p[1] }; }
+
+template <class MeshT>
+inline Vec2 get_xy(const MeshT &mesh, Hh hh)
+{ return get_xy(mesh, mesh.to_vertex_handle(hh)); }
+
+template <class MeshT>
+inline Vec2 get_dxy(const MeshT &mesh, Hh hh)
+{ return get_xy(mesh, hh) - get_xy(mesh, mesh.opposite_halfedge_handle(hh)); }
+
+template <class MeshT>
+inline void set_xy(MeshT &mesh, const Vh &vh, const Vec2 &u)
+{ const auto p = mesh.point(vh); mesh.set_point(vh, { u[0], u[1], p[2] }); }
+
+////////////////////////////////////////////////////////////////
+/// pred2D
+////////////////////////////////////////////////////////////////
 
 inline int sign(const double r)
 {
@@ -68,11 +94,6 @@ inline Vec2 intersection_param(const Vec2 &u0, const Vec2 &u1, const Vec2 &v0, c
 //        rv1 == 0 && rv0 != 0 && ru0*ru1 <= 0 ;  // v1 lies on [u0,u1]
 //}
 
-//inline bool is_intersecting(const Vec2 &u0, const Vec2 &u1, const Vec2 &v0, const Vec2 &v1)
-//{
-//    return is_intersecting(intersection_info(u0, u1, v0, v1));
-//}
-
 //inline int projective_region(const Vec2 &u0, const Vec2 &u1, const Vec2 &u)
 //{
 //    return sign(dot(u1 - u0, u - u0));
@@ -108,16 +129,6 @@ inline Vec2 intersection_param(const Vec2 &u0, const Vec2 &u1, const Vec2 &v0, c
 //        pu1v0 >= 0 && pu1v1 >= 0 || // u1 lies in [v0,v1]
 //        pv0u0 >= 0 && pv0u1 >= 0 || // v0 lies in [u0,u1]
 //        pv1u0 >= 0 && pv1u1 >= 0;   // v1 lies in [u0,u1]
-//}
-
-//inline bool is_overlapping(const Vec2 &u0, const Vec2 &u1, const Vec2 &v0, const Vec2 &v1)
-//{
-//    return is_overlapping(overlapping_info(u0, u1, v0, v1));
-//}
-
-//inline bool is_parallel(const Vec2 &d0, const Vec2 &d1)
-//{
-//    return orientation({ 0,0 }, d0, d1) == 0;
 //}
 
 ////////////////////////////////////////////////////////////////
@@ -160,56 +171,69 @@ inline int locate(const Vec2 &u0, const Vec2 &u1, const Vec2 &u2, const Vec2 &u)
         OUTSIDE;
 }
 
-////////////////////////////////////////////////////////////////
-/// utils
-////////////////////////////////////////////////////////////////
-
-inline double argument_angle(const Vec2 &du, const Vec2 &dw)
-{ return atan2(cross(du, dw), dot(du, dw)); }
-
-template <class MeshT>
-inline Vec2 get_xy(const MeshT &mesh, Vh vh)
-{ const auto p = mesh.point(vh); return { p[0], p[1] }; }
-
-template <class MeshT>
-inline Vec2 get_xy(const MeshT &mesh, Hh hh)
-{ return get_xy(mesh, mesh.to_vertex_handle(hh)); }
-
-template <class MeshT>
-inline Vec2 get_dxy(const MeshT &mesh, Hh hh)
-{ return get_xy(mesh, hh) - get_xy(mesh, mesh.opposite_halfedge_handle(hh)); }
-
-template <class MeshT>
-inline void set_xy(MeshT &mesh, const Vh &vh, const Vec2 &u)
-{ const auto p = mesh.point(vh); mesh.set_point(vh, { u[0], u[1], p[2] }); }
-
-template <class MeshT>
-inline VecN<Vec2, 2> get_range(const MeshT &mesh)
+inline int locate(TriMesh &mesh, const Fh &fh, const Vec2 &u, Hh &hh)
 {
-    Vec2 bl { +1e20, +1e20 };
-    Vec2 ur { -1e20, -1e20 };
-
-    for (Vh vh : mesh.vertices())
-    {
-        const auto u = get_xy(mesh, vh);
-        bl[0] = (u[0] < bl[0]) ? u[0] : bl[0];
-        bl[1] = (u[1] < bl[1]) ? u[1] : bl[1];
-        ur[0] = (u[0] > ur[0]) ? u[0] : ur[0];
-        ur[1] = (u[1] > ur[1]) ? u[1] : ur[1];
-    }
-
-    return { bl, ur };
+    const auto hh0 = mesh.halfedge_handle(fh);
+    const auto hh1 = mesh.next_halfedge_handle(hh0);
+    const auto hh2 = mesh.next_halfedge_handle(hh1);
+    const auto u0 = get_xy(mesh, mesh.to_vertex_handle(hh1));
+    const auto u1 = get_xy(mesh, mesh.to_vertex_handle(hh2));
+    const auto u2 = get_xy(mesh, mesh.to_vertex_handle(hh0));
+    const int loc = locate(u0, u1, u2, u);
+    if (loc == ON_E0) { hh = hh0; }
+    if (loc == ON_E1) { hh = hh1; }
+    if (loc == ON_E2) { hh = hh2; }
+    if (loc == AT_V0) { hh = hh1; }
+    if (loc == AT_V1) { hh = hh2; }
+    if (loc == AT_V2) { hh = hh0; }
+    return loc;
 }
+
+//inline int locate(TriMesh &mesh, const Fh &fh, const Vec2 &u, Hh &hh)
+//{
+//    constexpr double kEps = 1e-3;
+//    const auto hh0 = mesh.halfedge_handle(fh);
+//    const auto hh1 = mesh.next_halfedge_handle(hh0);
+//    const auto hh2 = mesh.next_halfedge_handle(hh1);
+//    const auto u0 = get_xy(mesh, mesh.to_vertex_handle(hh1));
+//    const auto u1 = get_xy(mesh, mesh.to_vertex_handle(hh2));
+//    const auto u2 = get_xy(mesh, mesh.to_vertex_handle(hh0));
+//    const auto bc = barycentric_coordinate(u0, u1, u2, u);
+//    if (fabs(bc[1]) < kEps && fabs(bc[2]) < kEps) return AT_V0;
+//    if (fabs(bc[2]) < kEps && fabs(bc[0]) < kEps) return AT_V1;
+//    if (fabs(bc[0]) < kEps && fabs(bc[1]) < kEps) return AT_V2;
+//    if (fabs(bc[0]) < kEps) { hh = hh0; return ON_E0; }
+//    if (fabs(bc[1]) < kEps) { hh = hh1; return ON_E1; }
+//    if (fabs(bc[2]) < kEps) { hh = hh2; return ON_E2; }
+//    return IN_TR;
+//}
 
 ////////////////////////////////////////////////////////////////
 /// Delaunay
 ////////////////////////////////////////////////////////////////
 
-//   2
-//  / \
+//   2  
+//  / \ 
 // 0---1
-//  \ /
-//   3
+//  \ / 
+//   3  
+inline bool is_delaunay(const Vec2 &u0, const Vec2 &u1, const Vec2 &u2, const Vec2 &u3)
+{
+    const double l  = norm(u1 - u0);
+    const double l0 = norm(u2 - u0);
+    const double l1 = norm(u2 - u1);
+    const double l2 = norm(u3 - u0);
+    const double l3 = norm(u3 - u1);
+    const double cs0 = cosine(l0, l1, l);
+    const double cs1 = cosine(l2, l3, l);
+    return cs0 + cs1 >= 0;
+}
+
+//   2  
+//  / \ 
+// 0---1
+//  \ / 
+//   3  
 inline bool is_delaunay(const TriMesh &mesh, const Eh &eh)
 {
     Hh hh0 = mesh.halfedge_handle(eh, 0);
@@ -224,36 +248,12 @@ inline bool is_delaunay(const TriMesh &mesh, const Eh &eh)
 struct EuclideanDelaunay
 {
     inline bool operator()(const TriMesh &mesh, const Eh &eh) const
-    { return is_delaunay(mesh, eh); } // If true, do not flip
+    { return is_sharp(mesh, eh) || is_delaunay(mesh, eh); } // If true, do not flip
 };
 
 ////////////////////////////////////////////////////////////////
 /// Insertion
 ////////////////////////////////////////////////////////////////
-
-inline int locate(TriMesh &mesh, const Fh &fh, const Vec2 &u, Hh &hh)
-{
-    constexpr double kEps = 1e-3;
-    const auto hh0 = mesh.halfedge_handle(fh);
-    const auto hh1 = mesh.next_halfedge_handle(hh0);
-    const auto hh2 = mesh.next_halfedge_handle(hh1);
-    const auto u0 = get_xy(mesh, mesh.to_vertex_handle(hh1));
-    const auto u1 = get_xy(mesh, mesh.to_vertex_handle(hh2));
-    const auto u2 = get_xy(mesh, mesh.to_vertex_handle(hh0));
-    const int loc = locate(u0, u1, u2, u);
-    if (loc == ON_E0) { hh = hh0; }
-    if (loc == ON_E1) { hh = hh1; }
-    if (loc == ON_E2) { hh = hh2; }
-    return loc;
-    //const auto bc = barycentric_coordinate(u0, u1, u2, u);
-    //if (fabs(bc[1]) < kEps && fabs(bc[2]) < kEps) return AT_V0;
-    //if (fabs(bc[2]) < kEps && fabs(bc[0]) < kEps) return AT_V1;
-    //if (fabs(bc[0]) < kEps && fabs(bc[1]) < kEps) return AT_V2;
-    //if (fabs(bc[0]) < kEps) { hh = hh0; return ON_E0; }
-    //if (fabs(bc[1]) < kEps) { hh = hh1; return ON_E1; }
-    //if (fabs(bc[2]) < kEps) { hh = hh2; return ON_E2; }
-    //return IN_TR;
-}
 
 inline void split_edge(TriMesh &mesh, const Eh &eh, const Vh &vh)
 {
@@ -279,21 +279,38 @@ static Fh search_triangle(const TriMesh &mesh, const Vec2 &u, Fh fh = Fh {})
     return fh;
 }
 
-static void add_points(TriMesh &mesh, const LoopMesh &poly)
+static void add_points(TriMesh &mesh, const std::vector<Vec2> &vs)
 {
-    assert(mesh.n_vertices() == 0);
+    mesh.clear();
 
-    for (Vh vp : poly.vertices())
+    for (const auto &u : vs)
     {
-        const auto u = get_xy(poly, vp);
         mesh.new_vertex({ u[0], u[1], 0 });
     }
 }
 
-static void set_domain(TriMesh &mesh, const LoopMesh &poly)
+template <class MeshT>
+inline VecN<Vec2, 2> get_range(const MeshT &mesh)
+{
+    Vec2 bl { +1e20, +1e20 };
+    Vec2 ur { -1e20, -1e20 };
+
+    for (Vh vh : mesh.vertices())
+    {
+        const auto u = get_xy(mesh, vh);
+        bl[0] = (u[0] < bl[0]) ? u[0] : bl[0];
+        bl[1] = (u[1] < bl[1]) ? u[1] : bl[1];
+        ur[0] = (u[0] > ur[0]) ? u[0] : ur[0];
+        ur[1] = (u[1] > ur[1]) ? u[1] : ur[1];
+    }
+
+    return { bl, ur };
+}
+
+static void set_domain(TriMesh &mesh)
 {
     // Get the size of the polygon
-    const auto blur = get_range(poly);
+    const auto blur = get_range(mesh);
     auto bl = blur[0], ur = blur[1];
     const auto dl = ur - bl;
     const double l = (dl[0]<dl[1]) ? dl[0] : dl[1];
@@ -313,7 +330,7 @@ static void set_domain(TriMesh &mesh, const LoopMesh &poly)
     mesh.add_face({ vh2, vh3, vh0 });
 }
 
-static int insert_vertices(TriMesh &mesh)
+static int insert_vertices(TriMesh &mesh, std::unordered_map<Vh, Vh> &dups)
 {
     const int max_num_edge_flip = 100;
 
@@ -337,7 +354,13 @@ static int insert_vertices(TriMesh &mesh)
 
         // on which primitive of the triangle the point is
         Hh hh {}; int loc = locate(mesh, fh, u, hh);
-        if (loc == OUTSIDE || loc == AT_V0 || loc == AT_V1 || loc == AT_V2) continue;
+
+        // skip any vertex with invalid location
+        if (loc == OUTSIDE) continue;
+
+        // skip and record overlapping vertices
+        if (loc == AT_V0 || loc == AT_V1 || loc == AT_V2)
+        { dups[vh] = mesh.to_vertex_handle(hh); continue; }
 
         // insert the point in the triangle or on the edge
         if (loc == IN_TR) mesh.split(fh, vh);
@@ -345,7 +368,6 @@ static int insert_vertices(TriMesh &mesh)
 
         // edges to flip
         Eh ehs[4]; int ne {};
-
         for (auto hdge : mesh.voh_range(vh))
             if (!hdge.next().edge().is_boundary())
                 ehs[ne++] = hdge.next().edge();
@@ -636,28 +658,42 @@ static int make_delaunay(TriMesh &mesh, Eh eh)
     return n_flip;
 }
 
-static int restore_constraints(TriMesh &mesh, const LoopMesh &poly)
+static int restore_constraints(TriMesh &mesh, const std::vector<Int2> &es, const std::unordered_map<Vh, Vh> &dups)
 {
-    for (Eh ep : poly.edges())
+    int err {};
+
+    for (const auto &vv : es)
     {
-        Vh vp0 = poly.from_vertex_handle(poly.halfedge_handle(ep, 0));
-        Vh vp1 = poly.to_vertex_handle  (poly.halfedge_handle(ep, 0));
-        Vh vh0 = mesh.vertex_handle(vp0.idx());
-        Vh vh1 = mesh.vertex_handle(vp1.idx());
+        Vh vh0 = mesh.vertex_handle(vv[0]);
+        Vh vh1 = mesh.vertex_handle(vv[1]);
+
+        if (dups.count(vh0))
+        {
+            printf("vertices (%d) and (%d) overlap\n", vh0.idx()+1, dups.at(vh0).idx()+1);
+            vh0 = dups.at(vh0);
+        }
+
+        if (dups.count(vh1))
+        {
+            printf("vertices (%d) and (%d) overlap\n", vh1.idx()+1, dups.at(vh1).idx()+1);
+            vh1 = dups.at(vh1);
+        }
+
         Hh hh = restore_constraint(mesh, vh0, vh1);
 
         if (!hh.is_valid())
         {
-            printf("restoring segment (%d, %d) failed\n", vh0.idx()+1, vh1.idx()+1);
-            continue;
+            printf("restoring segment (%d, %d) failed\n", vv[0]+1, vv[1]+1);
+            err = 1;
         }
-
-        set_sharp(mesh, mesh.edge_handle(hh), true); // mark restored edge
-
-        make_delaunay(mesh, mesh.edge_handle(hh)); // maintain Delaunay after restoration
+        else
+        {
+            set_sharp(mesh, mesh.edge_handle(hh), true); // mark restored edge
+            make_delaunay(mesh, mesh.edge_handle(hh)); // maintain Delaunay after restoration
+        }
     }
 
-    return 0;
+    return err;
 }
 
 static int remove_exteriors(TriMesh &mesh)
@@ -697,6 +733,7 @@ static int remove_exteriors(TriMesh &mesh)
         mesh.delete_face(fh);
     }
 
+    mesh.delete_isolated_vertices();
     mesh.garbage_collection();
 
     return 0;
@@ -706,23 +743,24 @@ static int remove_exteriors(TriMesh &mesh)
 /// Wrapping up
 ////////////////////////////////////////////////////////////////
 
-int triangulate(const LoopMesh &poly, TriMesh &mesh)
+int triangulate(const std::vector<Vec2> &vs, const std::vector<Int2> &es, TriMesh &mesh)
 {
     // Copy all vertices from polygon. Better do it at
     // beginning so the vertex is ordered accordingly.
-    add_points(mesh, poly);
+    add_points(mesh, vs);
 
     // Generate extended domain
-    set_domain(mesh, poly);
+    set_domain(mesh);
 
     // Insert points into the domain
-    insert_vertices(mesh);
+    std::unordered_map<Vh, Vh> dups {};
+    insert_vertices(mesh, dups);
 
     // Restore constraint edges in the domain
-    restore_constraints(mesh, poly);
+    int err = restore_constraints(mesh, es, dups);
 
-    // Remove exterior region
-    remove_exteriors(mesh);
+    // Remove triangles in the exterior region
+    if (!err) remove_exteriors(mesh);
 
-    return 0;
+    return err;
 }

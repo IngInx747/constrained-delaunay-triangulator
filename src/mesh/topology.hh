@@ -115,14 +115,14 @@ public:
 protected:
     MeshT &mesh;
     const DelaunayT &is_delaunay;
-    std::queue<Eh> frontier;
+    std::deque<Eh> frontier;
     std::unordered_set<Eh> enqueued;
 };
 
 template <class MeshT, class DelaunayT>
 inline void Delaunifier<MeshT, DelaunayT>::reset()
 {
-    while (!frontier.empty()) frontier.pop();
+    frontier.clear();
     enqueued.clear();
 }
 
@@ -131,10 +131,8 @@ inline void Delaunifier<MeshT, DelaunayT>::to_flip()
 {
     for (auto edge : mesh.edges())
     if (!edge.is_boundary())
-    if (!is_sharp(mesh, edge))
-    if (!is_fixed(mesh, edge))
     {
-        frontier.push(edge);
+        frontier.push_back(edge);
         enqueued.insert(edge);
     }
 }
@@ -144,10 +142,8 @@ inline void Delaunifier<MeshT, DelaunayT>::to_flip(const Eh ehs[], const int ne)
 {
     for (int i = 0; i < ne; ++i)
     if (!mesh.is_boundary(ehs[i]))
-    if (!is_sharp(mesh, ehs[i]))
-    if (!is_fixed(mesh, ehs[i]))
     {
-        frontier.push(ehs[i]);
+        frontier.push_back(ehs[i]);
         enqueued.insert(ehs[i]);
     }
 }
@@ -157,7 +153,7 @@ inline Eh Delaunifier<MeshT, DelaunayT>::flip()
 {
     while (!frontier.empty())
     {
-        auto ehf = frontier.front(); frontier.pop();
+        auto ehf = frontier.front(); frontier.pop_front();
         enqueued.erase(ehf);
 
         if (is_delaunay(mesh, ehf)) continue;
@@ -173,11 +169,9 @@ inline Eh Delaunifier<MeshT, DelaunayT>::flip()
 
         for (const auto &eh : ehs)
         if (!mesh.is_boundary(eh))
-        if (!is_sharp(mesh, eh))
-        if (!is_fixed(mesh, eh))
         if (!enqueued.count(eh))
         {
-            frontier.push(eh);
+            frontier.push_back(eh);
             enqueued.insert(eh);
         }
 
@@ -190,15 +184,5 @@ inline Eh Delaunifier<MeshT, DelaunayT>::flip()
 template <class MeshT, class DelaunayT>
 inline Delaunifier<MeshT, DelaunayT> make_delaunifier(MeshT &mesh, const DelaunayT &is_delaunay)
 { return Delaunifier<MeshT, DelaunayT>(mesh, is_delaunay); }
-
-////////////////////////////////////////////////////////////////
-/// Utilities
-////////////////////////////////////////////////////////////////
-
-template <class MeshT>
-inline int get_boundaries(const MeshT&, std::vector<Hh>&);
-
-template <class MeshT>
-inline void sort_boundaries(const MeshT&, std::vector<Hh>&);
 
 #endif
