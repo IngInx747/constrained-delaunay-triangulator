@@ -25,10 +25,6 @@ inline Vec2 get_xy(const MeshT &mesh, Hh hh)
 { return get_xy(mesh, mesh.to_vertex_handle(hh)); }
 
 template <class MeshT>
-inline Vec2 get_dxy(const MeshT &mesh, Hh hh)
-{ return get_xy(mesh, hh) - get_xy(mesh, mesh.opposite_halfedge_handle(hh)); }
-
-template <class MeshT>
 inline void set_xy(MeshT &mesh, const Vh &vh, const Vec2 &u)
 { const auto p = mesh.point(vh); mesh.set_point(vh, { u[0], u[1], p[2] }); }
 
