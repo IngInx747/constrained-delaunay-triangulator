@@ -434,7 +434,7 @@ inline int next_intersection(const TriMesh &mesh, const Vec2 &u0, const Vec2 &u1
 inline int next_intersection(const TriMesh &mesh, const Vec2 &u0, const Vec2 &u1, Vh vho, Hh &hhc, Vh &vhc)
 {
     int res { NO_ITSC };
-    double tmax {}; // the parameter in line equation: u0 + (u1-u0)*t
+    double tmax {}; // the parameter of line equation: u0 + (u1-u0)*t
 
     for (Hh hh : mesh.voh_range(vho)) if (!mesh.is_boundary(hh))
     {
@@ -444,7 +444,7 @@ inline int next_intersection(const TriMesh &mesh, const Vec2 &u0, const Vec2 &u1
         if (ii == NO_ITSC) continue;
 
         const double t = intersection_param(mesh, u0, u1, hh);
-        if (tmax >= t) continue; // intersected but earlier
+        if (tmax >= t) continue; // intersected but backward
 
         tmax = t;
         res = ii;
@@ -639,7 +639,8 @@ static int make_delaunay(TriMesh &mesh, Eh eh)
         mesh.edge_handle(mesh.next_halfedge_handle(mesh.halfedge_handle(eh, 0))),
         mesh.edge_handle(mesh.prev_halfedge_handle(mesh.halfedge_handle(eh, 0))),
         mesh.edge_handle(mesh.next_halfedge_handle(mesh.halfedge_handle(eh, 1))),
-        mesh.edge_handle(mesh.prev_halfedge_handle(mesh.halfedge_handle(eh, 1))) };
+        mesh.edge_handle(mesh.prev_halfedge_handle(mesh.halfedge_handle(eh, 1)))
+    };
 
     delaunifier.reset(); delaunifier.to_flip(ehs, 4); int n_flip {};
 
@@ -735,8 +736,8 @@ static int remove_exteriors(TriMesh &mesh)
 
 int triangulate(const std::vector<Vec2> &vs, const std::vector<Int2> &es, TriMesh &mesh)
 {
-    // Copy all vertices from polygon. Better do it at
-    // beginning so the vertex is ordered accordingly.
+    // Copy all vertices from polygon. Better do it at beginning
+    // so the vertices are added in their original order.
     add_points(mesh, vs);
 
     // Generate extended domain

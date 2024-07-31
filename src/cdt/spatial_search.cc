@@ -76,10 +76,6 @@ template <class MeshT>
 inline Vec2 get_xy(const MeshT &mesh, Hh hh)
 { return get_xy(mesh, mesh.to_vertex_handle(hh)); }
 
-template <class MeshT>
-inline Vec2 get_dxy(const MeshT &mesh, Hh hh)
-{ return get_xy(mesh, hh) - get_xy(mesh, mesh.opposite_halfedge_handle(hh)); }
-
 inline bool is_inside(const TriMesh &mesh, const Fh &fh, const Vec2 &u)
 {
     const auto hh = mesh.halfedge_handle(fh);
